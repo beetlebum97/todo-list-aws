@@ -1,0 +1,106 @@
+pipeline {
+    agent none
+    stages {
+        // DESCARGA CÓDIGO FUENTE
+        stage('Get Code') {
+		agent { label 'principal' }
+            steps {
+                sh 'whoami ; hostname ; hostname -I; uname -a'      
+                git branch: 'develop', url:'https://github.com/beetlebum97/todo-list-aws.git'   
+                echo "WORKSPACE: ${env.WORKSPACE}"
+                sh 'git rev-parse --abbrev-ref HEAD'
+                sh 'ls -la'
+				stash name: 'source_code', includes: '**'
+            }
+        }
+        // PRUEBAS ESTÁTICAS
+        stage('Static Test') {
+		agent { label 'agente1' }
+            steps {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {  
+					unstash 'source_code'
+                    sh 'whoami ; hostname ; hostname -I; uname -a'
+                    
+					// FLAKE8
+                    sh 'flake8 --format=pylint --exit-zero src > flake8.out'
+                    recordIssues tools: [flake8(name: 'Flake8', pattern: 'flake8.out')]
+                    
+                    // BANDIT
+                    sh 'bandit --exit-zero -r src -f custom -o bandit.out --msg-template "{abspath}:{line}: [{test_id}] {msg}"'
+                    recordIssues tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')]
+                }
+            }
+        }
+        // DESPLIEGUE SAM
+        stage('Deploy') {
+		agent { label 'principal' }
+            steps {
+                
+				unstash 'source_code'
+                sh 'whoami ; hostname ; hostname -I; uname -a'
+                
+                sh '''
+                sam delete --stack-name todo-list-aws-staging --no-prompts  
+                sam deploy \
+                    --config-file samconfig.toml \
+                    --config-env staging \
+                    --no-confirm-changeset \
+                    --no-fail-on-empty-changeset | tee deploy_output.txt
+                '''
+		stash name: 'deploy_info', includes: 'deploy_output.txt'
+            }
+        }
+        // PRUEBAS DE INTEGRACIÓN
+        stage('Rest Test') {
+		agent { label 'agente2' }
+            steps {
+                unstash 'source_code'
+                unstash 'deploy_info'
+                
+                sh 'whoami ; hostname ; hostname -I; uname -a'
+                sh '''
+                    BASE_URL=$(awk '/Key *BaseUrlApi/{getline; getline; print $2}' deploy_output.txt)
+                    export BASE_URL=${BASE_URL}
+                    pytest --junitxml=result-unit.xml test/integration/todoApiTest.py
+                '''
+                junit 'result-unit.xml'
+            }
+        }
+        // FUSIÓN CON RAMA MASTER
+        stage('Promote') {
+		agent { label 'principal' }
+            steps {
+                unstash 'source_code'
+                sh 'whoami ; hostname ; hostname -I; uname -a'
+                script {
+                    withCredentials([string(credentialsId: 'github-pass', variable: 'TOKEN'),
+                                    string(credentialsId: 'github-usuario', variable: 'USUARIO'),
+                                    string(credentialsId: 'github-email', variable: 'EMAIL')]) {
+                        sh '''
+                            git checkout master
+                            git merge -X ours develop
+                            set +x
+                            git config user.name "${USUARIO}"
+                            git config user.email "${EMAIL}"
+                            git push https://${TOKEN}@github.com/beetlebum97/todo-list-aws.git master
+                            set -x
+                        '''
+                    }
+                }    
+            }
+        }
+    }
+    post {
+        always {
+            script {
+                def nodes = ['principal', 'agente1', 'agente2']
+                nodes.each { nodeLabel ->
+                    node(nodeLabel) {
+                        echo "Limpiando workspace en el nodo ${nodeLabel}"
+                        cleanWs() 
+                    }
+                }        
+            }
+        }
+    }
+}
