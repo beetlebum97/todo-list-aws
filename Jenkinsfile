@@ -1,11 +1,11 @@
 pipeline {
     agent any
-    // DESCARGA CÓDIGO FUENTE
     stages {
+        // DESCARGA CÓDIGO FUENTE
         stage('Get Code') {
             steps {
-                sh 'whoami ; hostname ; hostname -I; uname -a'      
-                git branch: 'develop', url:'https://github.com/beetlebum97/todo-list-aws.git'   
+                sh 'whoami ; hostname ; hostname -I; uname -a'
+                git branch: 'develop', url:'https://github.com/beetlebum97/todo-list-aws.git'
                 echo "WORKSPACE: ${env.WORKSPACE}"
                 sh 'git rev-parse --abbrev-ref HEAD'
                 sh 'ls -la'
@@ -14,11 +14,11 @@ pipeline {
         // PRUEBAS ESTÁTICAS
         stage('Static Test') {
             steps {
-                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {          
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                     // FLAKE8
                     sh 'flake8 --format=pylint --exit-zero src > flake8.out'
                     recordIssues tools: [flake8(name: 'Flake8', pattern: 'flake8.out')]
-                    
+
                     // BANDIT
                     sh 'bandit --exit-zero -r src -f custom -o bandit.out --msg-template "{abspath}:{line}: [{test_id}] {msg}"'
                     recordIssues tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')]
@@ -27,9 +27,9 @@ pipeline {
         }
         // DESPLIEGUE SAM
         stage('Deploy') {
-            steps {     
+            steps {
                 sh '''
-                sam delete --stack-name todo-list-aws-staging --no-prompts  
+                sam delete --stack-name todo-list-aws-staging --no-prompts
                 sam deploy \
                     --config-file samconfig.toml \
                     --config-env staging \
@@ -57,17 +57,32 @@ pipeline {
                                     string(credentialsId: 'github-usuario', variable: 'USUARIO'),
                                     string(credentialsId: 'github-email', variable: 'EMAIL')]) {
                         sh '''
-                            git checkout master
-                            git merge develop
+                            # Limpiar outputs, cargar rama master y fusionar con develop
+                            rm bandit.out flake8.out deploy_out.txt result-unit.xml
+                            git fetch --all
+                            git checkout master 2>/dev/null || git checkout -b master origin/master
+                            git merge develop --no-commit --no-ff || true
+
+                            # Resolver conflictos automáticamente
+                            git checkout --theirs Jenkinsfile*
+                            git checkout --theirs samconfig.toml
+                            git checkout --ours .
+
+                            # Ejemplo archivo actualizado
+                            cat CHANGELOG.md
+
+                            # Agregar y confirmar cambios
+                            git add .
+                            git commit -m "CP1-D R5 Trigger Webhook"
                             git log -n 1
-                            set +x
+
+                            # Subir cambios al repositorio remoto
                             git config user.name "${USUARIO}"
                             git config user.email "${EMAIL}"
                             git push https://${TOKEN}@github.com/beetlebum97/todo-list-aws.git master
-                            set -x
                         '''
                     }
-                }    
+                }
             }
         }
     }
