@@ -1,0 +1,23 @@
+pipeline {
+    agent any
+    stages {
+        stage('Get_Code') {
+            steps {
+                git branch: 'master', url:'https://github.com/beetlebum97/todo-list-aws.git'
+                sh '''
+                    rm -f samconfig.toml
+                    curl -O https://raw.githubusercontent.com/beetlebum97/todo-list-aws-config/production/samconfig.toml
+                    ls -la
+                    cat samconfig.toml
+                '''
+            }
+        }
+    }   
+    post {
+        always {
+            script {
+                cleanWs()
+            }
+        }
+    }
+}
