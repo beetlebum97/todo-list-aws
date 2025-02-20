@@ -1,0 +1,55 @@
+pipeline {
+    agent any
+    stages {
+        stage('Get Code') {
+            steps {
+                script {
+                    // Paso 1: Clonar el repositorio principal excluyendo samconfig.toml
+                    checkout([$class: 'GitSCM', 
+                              branches: [[name: '*/develop']], 
+                              doGenerateSubmoduleConfigurations: false, 
+                              extensions: [
+                                  [$class: 'SparseCheckoutPaths', 
+                                    sparseCheckoutPaths: [
+                                        // Incluir todo excepto samconfig.toml
+                                        [$class: 'SparseCheckoutPath', path: '/*'],
+                                        [$class: 'SparseCheckoutPath', path: '!/samconfig.toml']
+                                    ]]
+                              ], 
+                              userRemoteConfigs: [[url: 'https://github.com/beetlebum97/todo-list-aws.git']]
+                    ])
+                    
+                    sh 'ls -la' // Verificar que samconfig.toml no está presente
+
+                    // Paso 2: Clonar el repositorio de configuración en un subdirectorio temporal
+                    dir('config') { 
+                        checkout([$class: 'GitSCM', 
+                                  branches: [[name: '*/staging']], 
+                                  doGenerateSubmoduleConfigurations: false, 
+                                  extensions: [
+                                      [$class: 'SparseCheckoutPaths', 
+                                        sparseCheckoutPaths: [
+                                            [$class: 'SparseCheckoutPath', path: 'samconfig.toml']
+                                        ]]
+                                  ], 
+                                  userRemoteConfigs: [[url: 'https://github.com/beetlebum97/todo-list-aws-config.git']]
+                        ])
+                    }
+
+                    // Paso 3: Copiar samconfig.toml al directorio principal y eliminar subdirectorio temporal
+                    sh 'mv config/samconfig.toml .'
+                    sh 'rm -rf config'
+                    sh 'ls -la' // Verificar que todo está completo
+                    sh 'cat samconfig.toml' // Verificar contenido coincide con el entorno staging
+                }
+            }
+        }
+    }
+    post {
+        always {
+            script {
+                cleanWs()
+            }
+        }
+    }
+}
