@@ -63,18 +63,11 @@ pipeline {
                             git checkout master 2>/dev/null || git checkout -b master origin/master
                             git merge develop --no-commit --no-ff || true
 
-                            # Resolver conflictos automáticamente
-                            git checkout --theirs Jenkinsfile*
-                            git checkout --theirs samconfig.toml
-                            git checkout --ours .
-
-                            # Ejemplo archivo actualizado
-                            cat CHANGELOG.md
-
-                            # Agregar y confirmar cambios
+                            # Preservar archivos Jenkinsfile de la rama master
+                            git restore --source=HEAD --staged --worktree -- Jenkinsfile*
                             git add .
-                            git commit -m "CP1-D R5 Trigger Webhook"
-                            git log -n 1
+			    git status
+			    git commit -m "CP1-D R5"
 
                             # Subir cambios al repositorio remoto
                             git config user.name "${USUARIO}"
