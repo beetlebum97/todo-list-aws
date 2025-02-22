@@ -58,7 +58,7 @@ pipeline {
                                     string(credentialsId: 'github-email', variable: 'EMAIL')]) {
                         sh '''
                             # Limpiar outputs, cargar rama master y fusionar con develop
-                            rm bandit.out flake8.out deploy_out.txt result-unit.xml
+                            rm bandit.out flake8.out deploy_output.txt result-unit.xml
                             git fetch --all
                             git checkout master 2>/dev/null || git checkout -b master origin/master
                             git merge develop --no-commit --no-ff || true
